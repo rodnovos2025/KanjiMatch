@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Kanji Match</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://code.iconify.design/iconify-icon/1.0.8/iconify-icon.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      position: relative;
+    }
+    #kanji-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      grid-gap: 15px;
+      margin-top: 30px;
+    }
+    .kanji-tile {
+      width: 100px;
+      height: 100px;
+      font-size: 2.5em;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 0.1s ease, box-shadow 0.3s;
+      box-shadow: 0 0 10px rgba(255,255,255,0.1);
+    }
+    .kanji-tile:active {
+      transform: scale(0.95);
+    }
+    #prompt {
+      margin-top: 25px;
+      font-size: 1.5em;
+      text-align: center;
+    }
+    #result {
+      margin-top: 15px;
+      font-size: 1.2em;
+      height: 1.2em;
+    }
+    #score {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: #1e1e1e;
+      padding: 10px 16px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      font-size: 0.95em;
+    }
+    #share-icon {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #0088cc;
+      border-radius: 50%;
+      padding: 14px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    #share-icon:hover {
+      transform: scale(1.1);
+      background: #0075b5;
+    }
+    .iconify {
+      color: white;
+      font-size: 26px;
+    }
+    #level {
+      margin-top: 20px;
+      font-size: 1.1em;
+      opacity: 0.8;
+    }
+    #exit-icon, #refresh-icon {
+      position: fixed;
+      top: 20px;
+      background: #333;
+      border-radius: 50%;
+      padding: 12px;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    #exit-icon:hover, #refresh-icon:hover {
+      transform: scale(1.1);
+      background: #555;
+    }
+    #exit-icon {
+      left: 20px;
+    }
+    #refresh-icon {
+      left: 70px;
+    }
+  </style>
+</head>
+<body>
+  <div id="level"></div>
+  <div id="prompt"></div>
+  <div id="kanji-grid">Loading...</div>
+  <div id="result"></div>
+  <div id="score"></div>
+
+  <div id="exit-icon" title="Выйти в начало">
+    <iconify-icon icon="material-symbols:logout-rounded"></iconify-icon>
+  </div>
+  <div id="refresh-icon" title="Начать заново">
+    <iconify-icon icon="material-symbols:refresh-rounded"></iconify-icon>
+  </div>
+  <div id="share-icon" title="Поделиться в Telegram">
+    <iconify-icon icon="ic:baseline-send"></iconify-icon>
+  </div>
+
+  <script>
+    const grid = document.getElementById("kanji-grid");
+    const promptDiv = document.getElementById("prompt");
+    const resultDiv = document.getElementById("result");
+    const scoreDiv = document.getElementById("score");
+    const levelDiv = document.getElementById("level");
+
+    const gradients = [
+      "linear-gradient(135deg, #667eea, #764ba2)",
+      "linear-gradient(135deg, #f7971e, #ffd200)",
+      "linear-gradient(135deg, #56ccf2, #2f80ed)",
+      "linear-gradient(135deg, #ff6a00, #ee0979)",
+      "linear-gradient(135deg, #00c6ff, #0072ff)",
+      "linear-gradient(135deg, #f953c6, #b91d73)",
+      "linear-gradient(135deg, #2193b0, #6dd5ed)",
+      "linear-gradient(135deg, #ff9a9e, #fad0c4)",
+      "linear-gradient(135deg, #43e97b, #38f9d7)"
+    ];
+
+    let allKanji = [];
+    let shuffledKanji = [];
+    let currentLevelIndex = 0;
+    let correctKanji = null;
+    let score = 0;
+    let streak = 0;
+    let maxStreak = localStorage.getItem("maxStreak") || 0;
+
+    async function fetchAllKanji() {
+      const res = await fetch('https://kanjiapi.dev/v1/kanji/joyo');
+      return await res.json();
+    }
+
+    async function getKanjiData(kanji) {
+      const res = await fetch(`https://kanjiapi.dev/v1/kanji/${kanji}`);
+      return await res.json();
+    }
+
+    function getRandomItems(arr, n, exclude) {
+      const filtered = arr.filter(k => !exclude.includes(k));
+      const shuffled = filtered.sort(() => 0.5 - Math.random());
+      return shuffled.slice(0, n);
+    }
+
+    async function loadGame() {
+      if (currentLevelIndex >= shuffledKanji.length) {
+        alert("Поздравляем! Вы прошли все 2136 уровней!");
+        return;
+      }
+
+      const currentKanji = shuffledKanji[currentLevelIndex];
+      const distractors = getRandomItems(allKanji, 8, [currentKanji]);
+      const kanjiList = [...distractors, currentKanji].sort(() => 0.5 - Math.random());
+
+      const kanjiDataList = await Promise.all(kanjiList.map(getKanjiData));
+      correctKanji = kanjiDataList.find(k => k.kanji === currentKanji);
+
+      grid.innerHTML = "";
+      resultDiv.textContent = "";
+
+      kanjiDataList.forEach((data, i) => {
+        const div = document.createElement("div");
+        div.className = "kanji-tile";
+        div.textContent = data.kanji;
+        div.style.background = gradients[i % gradients.length];
+        div.onclick = () => checkAnswer(data);
+        grid.appendChild(div);
+      });
+
+      promptDiv.textContent = correctKanji.meanings.join(", ");
+      levelDiv.textContent = `Уровень ${currentLevelIndex + 1} / ${shuffledKanji.length}`;
+      updateScore();
+    }
+
+    function checkAnswer(selected) {
+      const isCorrect = selected.kanji === correctKanji.kanji;
+      if (isCorrect) {
+        score++;
+        streak++;
+        if (streak > maxStreak) {
+          maxStreak = streak;
+          localStorage.setItem("maxStreak", maxStreak);
+        }
+        resultDiv.textContent = "Верно!";
+        resultDiv.style.color = "lightgreen";
+        currentLevelIndex++;
+        setTimeout(loadGame, 1000);
+      } else {
+        resultDiv.textContent = `Неверно! Это было: ${correctKanji.kanji}`;
+        resultDiv.style.color = "orangered";
+        streak = 0;
+      }
+      updateScore();
+    }
+
+    function updateScore() {
+      scoreDiv.innerHTML = `Очки: ${score}<br>Стрик: ${streak}<br>Макс: ${maxStreak}`;
+    }
+
+    document.getElementById("exit-icon").onclick = () => {
+      currentLevelIndex = 0;
+      score = 0;
+      streak = 0;
+      resultDiv.textContent = "";
+      loadGame();
+    };
+
+    document.getElementById("refresh-icon").onclick = () => {
+      localStorage.removeItem("shuffledKanji");
+      currentLevelIndex = 0;
+      score = 0;
+      streak = 0;
+      resultDiv.textContent = "";
+      location.reload();
+    };
+
+    document.getElementById("share-icon").onclick = () => {
+      const text = `Я на ${currentLevelIndex + 1}/2136 уровне в KanjiMatch! Попробуй: https://rodnovos2025.github.io/KanjiMatch/`;
+      const url = `https://t.me/share/url?url=${encodeURIComponent("https://rodnovos2025.github.io/KanjiMatch/")}&text=${encodeURIComponent(text)}`;
+      window.open(url, "_blank");
+    };
+
+    window.onload = async () => {
+      allKanji = await fetchAllKanji();
+      shuffledKanji = JSON.parse(localStorage.getItem("shuffledKanji"));
+      if (!shuffledKanji || shuffledKanji.length !== allKanji.length) {
+        shuffledKanji = allKanji.slice().sort(() => 0.5 - Math.random());
+        localStorage.setItem("shuffledKanji", JSON.stringify(shuffledKanji));
+      }
+      loadGame();
+    };
+  </script>
+</body>
+</html>
