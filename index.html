@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://code.iconify.design/iconify-icon/1.0.8/iconify-icon.min.js"></script>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap');
+
     body {
       margin: 0;
       font-family: sans-serif;
@@ -15,14 +17,16 @@
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      position: relative;
+      padding-bottom: 40px;
     }
+
     #kanji-grid {
       display: grid;
       grid-template-columns: repeat(3, 100px);
       grid-gap: 15px;
-      margin-top: 30px;
+      margin-top: 80px;
     }
+
     .kanji-tile {
       width: 100px;
       height: 100px;
@@ -37,98 +41,73 @@
       transition: transform 0.1s ease, box-shadow 0.3s;
       box-shadow: 0 0 10px rgba(255,255,255,0.1);
     }
+
     .kanji-tile:active {
       transform: scale(0.95);
     }
+
+    .kanji-tile.disabled {
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
     #prompt {
-      margin-top: 25px;
+      margin-top: 30px;
       font-size: 1.5em;
       text-align: center;
     }
+
     #result {
-      margin-top: 15px;
+      margin-top: 20px;
       font-size: 1.2em;
       height: 1.2em;
     }
-    #score {
+
+    #level-display, #record-display {
       position: fixed;
-      bottom: 20px;
-      left: 20px;
-      background: #1e1e1e;
-      padding: 10px 16px;
+      top: 10px;
+      background: #222;
+      padding: 6px 12px;
       border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      font-size: 0.95em;
+      box-shadow: 0 0 10px rgba(0,0,0,0.4);
+      font-size: 1em;
+      z-index: 10;
     }
-    #share-icon {
+
+    #level-display {
+      left: 10px;
+    }
+
+    #record-display {
+      right: 10px;
+    }
+
+    footer {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background: #0088cc;
-      border-radius: 50%;
-      padding: 14px;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-      cursor: pointer;
-      transition: transform 0.2s ease;
-    }
-    #share-icon:hover {
-      transform: scale(1.1);
-      background: #0075b5;
-    }
-    .iconify {
-      color: white;
-      font-size: 26px;
-    }
-    #level {
-      margin-top: 20px;
-      font-size: 1.1em;
-      opacity: 0.8;
-    }
-    #exit-icon, #refresh-icon {
-      position: fixed;
-      top: 20px;
-      background: #333;
-      border-radius: 50%;
-      padding: 12px;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-      cursor: pointer;
-      transition: transform 0.2s ease;
-    }
-    #exit-icon:hover, #refresh-icon:hover {
-      transform: scale(1.1);
-      background: #555;
-    }
-    #exit-icon {
-      left: 20px;
-    }
-    #refresh-icon {
-      left: 70px;
+      bottom: 10px;
+      width: 100%;
+      text-align: center;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 0.9em;
+      color: #888;
+      letter-spacing: 1px;
     }
   </style>
 </head>
 <body>
-  <div id="level"></div>
-  <div id="prompt"></div>
+  <div id="level-display">Уровень 1 / 2136</div>
+  <div id="record-display">Мой рекорд: 0</div>
   <div id="kanji-grid">Loading...</div>
+  <div id="prompt"></div>
   <div id="result"></div>
-  <div id="score"></div>
-
-  <div id="exit-icon" title="Выйти в начало">
-    <iconify-icon icon="material-symbols:logout-rounded"></iconify-icon>
-  </div>
-  <div id="refresh-icon" title="Начать заново">
-    <iconify-icon icon="material-symbols:refresh-rounded"></iconify-icon>
-  </div>
-  <div id="share-icon" title="Поделиться в Telegram">
-    <iconify-icon icon="ic:baseline-send"></iconify-icon>
-  </div>
+  <footer>© 2 авторитета, 2025</footer>
 
   <script>
     const grid = document.getElementById("kanji-grid");
     const promptDiv = document.getElementById("prompt");
     const resultDiv = document.getElementById("result");
-    const scoreDiv = document.getElementById("score");
-    const levelDiv = document.getElementById("level");
+    const levelDisplay = document.getElementById("level-display");
+    const recordDisplay = document.getElementById("record-display");
 
     const gradients = [
       "linear-gradient(135deg, #667eea, #764ba2)",
@@ -143,12 +122,10 @@
     ];
 
     let allKanji = [];
-    let shuffledKanji = [];
-    let currentLevelIndex = 0;
+    let usedKanji = JSON.parse(localStorage.getItem("usedKanji") || "[]");
+    let currentSet = [];
     let correctKanji = null;
-    let score = 0;
-    let streak = 0;
-    let maxStreak = localStorage.getItem("maxStreak") || 0;
+    let maxStreak = parseInt(localStorage.getItem("maxStreak") || "0");
 
     async function fetchAllKanji() {
       const res = await fetch('https://kanjiapi.dev/v1/kanji/joyo');
@@ -160,28 +137,27 @@
       return await res.json();
     }
 
-    function getRandomItems(arr, n, exclude) {
-      const filtered = arr.filter(k => !exclude.includes(k));
-      const shuffled = filtered.sort(() => 0.5 - Math.random());
+    function getRandomItems(arr, n) {
+      const shuffled = arr.slice().sort(() => 0.5 - Math.random());
       return shuffled.slice(0, n);
     }
 
     async function loadGame() {
-      if (currentLevelIndex >= shuffledKanji.length) {
+      grid.innerHTML = "Loading...";
+      resultDiv.textContent = "";
+
+      const remainingKanji = allKanji.filter(k => !usedKanji.includes(k));
+      if (remainingKanji.length === 0) {
         alert("Поздравляем! Вы прошли все 2136 уровней!");
         return;
       }
 
-      const currentKanji = shuffledKanji[currentLevelIndex];
-      const distractors = getRandomItems(allKanji, 8, [currentKanji]);
-      const kanjiList = [...distractors, currentKanji].sort(() => 0.5 - Math.random());
-
+      const kanjiList = getRandomItems(remainingKanji, Math.min(9, remainingKanji.length));
       const kanjiDataList = await Promise.all(kanjiList.map(getKanjiData));
-      correctKanji = kanjiDataList.find(k => k.kanji === currentKanji);
+      currentSet = kanjiDataList;
+      correctKanji = kanjiDataList[Math.floor(Math.random() * kanjiDataList.length)];
 
       grid.innerHTML = "";
-      resultDiv.textContent = "";
-
       kanjiDataList.forEach((data, i) => {
         const div = document.createElement("div");
         div.className = "kanji-tile";
@@ -192,65 +168,48 @@
       });
 
       promptDiv.textContent = correctKanji.meanings.join(", ");
-      levelDiv.textContent = `Уровень ${currentLevelIndex + 1} / ${shuffledKanji.length}`;
-      updateScore();
+      updateScoreboard();
+    }
+
+    function updateScoreboard() {
+      levelDisplay.textContent = `Уровень ${usedKanji.length + 1} / 2136`;
+      recordDisplay.textContent = `Мой рекорд: ${maxStreak}`;
     }
 
     function checkAnswer(selected) {
+      const tiles = document.querySelectorAll(".kanji-tile");
+      tiles.forEach(t => t.classList.add("disabled"));
       const isCorrect = selected.kanji === correctKanji.kanji;
       if (isCorrect) {
-        score++;
-        streak++;
-        if (streak > maxStreak) {
-          maxStreak = streak;
+        usedKanji.push(correctKanji.kanji);
+        localStorage.setItem("usedKanji", JSON.stringify(usedKanji));
+        if (usedKanji.length > maxStreak) {
+          maxStreak = usedKanji.length;
           localStorage.setItem("maxStreak", maxStreak);
         }
         resultDiv.textContent = "Верно!";
         resultDiv.style.color = "lightgreen";
-        currentLevelIndex++;
-        setTimeout(loadGame, 1000);
+        setTimeout(loadGame, 1500);
       } else {
         resultDiv.textContent = `Неверно! Это было: ${correctKanji.kanji}`;
         resultDiv.style.color = "orangered";
-        streak = 0;
+        setTimeout(() => {
+          const share = confirm("Поделиться результатом в Telegram?");
+          if (share) {
+            const text = encodeURIComponent(`Я дошёл до ${usedKanji.length + 1}/2136 в KanjiMatch! https://rodnovos2025.github.io/KanjiMatch/`);
+            const url = `https://t.me/share/url?url=https://rodnovos2025.github.io/KanjiMatch/&text=${text}`;
+            window.open(url, "_blank");
+          }
+          usedKanji = [];
+          localStorage.setItem("usedKanji", JSON.stringify([]));
+          loadGame();
+        }, 2000);
       }
-      updateScore();
+      updateScoreboard();
     }
-
-    function updateScore() {
-      scoreDiv.innerHTML = `Очки: ${score}<br>Стрик: ${streak}<br>Макс: ${maxStreak}`;
-    }
-
-    document.getElementById("exit-icon").onclick = () => {
-      currentLevelIndex = 0;
-      score = 0;
-      streak = 0;
-      resultDiv.textContent = "";
-      loadGame();
-    };
-
-    document.getElementById("refresh-icon").onclick = () => {
-      localStorage.removeItem("shuffledKanji");
-      currentLevelIndex = 0;
-      score = 0;
-      streak = 0;
-      resultDiv.textContent = "";
-      location.reload();
-    };
-
-    document.getElementById("share-icon").onclick = () => {
-      const text = `Я на ${currentLevelIndex + 1}/2136 уровне в KanjiMatch! Попробуй: https://rodnovos2025.github.io/KanjiMatch/`;
-      const url = `https://t.me/share/url?url=${encodeURIComponent("https://rodnovos2025.github.io/KanjiMatch/")}&text=${encodeURIComponent(text)}`;
-      window.open(url, "_blank");
-    };
 
     window.onload = async () => {
       allKanji = await fetchAllKanji();
-      shuffledKanji = JSON.parse(localStorage.getItem("shuffledKanji"));
-      if (!shuffledKanji || shuffledKanji.length !== allKanji.length) {
-        shuffledKanji = allKanji.slice().sort(() => 0.5 - Math.random());
-        localStorage.setItem("shuffledKanji", JSON.stringify(shuffledKanji));
-      }
       loadGame();
     };
   </script>
